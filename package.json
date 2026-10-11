@@ -1,0 +1,27 @@
+{
+  "name": "astragrid-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AstraGrid AI smart-city monitoring and disaster response platform",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "infra"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@astragrid/web",
+    "dev:api": "npm run dev --workspace=@astragrid/api",
+    "dev:simulator": "npm run dev --workspace=@astragrid/sensor-simulator",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "synth": "npm run synth --workspace=@astragrid/infra"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

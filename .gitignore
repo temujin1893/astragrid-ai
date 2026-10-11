@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.vite/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+cdk.out/
+.DS_Store
+Thumbs.db
