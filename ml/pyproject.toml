@@ -5,9 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "astragrid-model"
 version = "0.1.0"
-description = "Starter package for AstraGrid AI model experiments"
+description = "Flood-risk model training and inference for AstraGrid AI"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+	"scikit-learn>=1.5,<2.0",
+	"joblib>=1.4,<2.0",
+	"matplotlib>=3.8,<4.0",
+]
+
+[project.scripts]
+astra-model = "astra_model.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

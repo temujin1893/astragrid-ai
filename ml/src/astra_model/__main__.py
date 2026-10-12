@@ -1,5 +1,4 @@
-def main() -> None:
-    print("AstraGrid model scaffold ready; no model is loaded.")
+from .cli import main
 
 
 if __name__ == "__main__":

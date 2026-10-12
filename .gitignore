@@ -10,6 +10,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+artifacts/
+ml/data/
+ml/results/
 cdk.out/
 .DS_Store
 Thumbs.db
+.venv-wsl/
+ml/astragrid_model.egg-info/
