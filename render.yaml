@@ -1,0 +1,31 @@
+# Render Blueprint — AstraGrid AI API on the Free compute plan.
+# Docs: docs/deployment-free.md. No secrets live in this file: the three
+# sync:false variables are entered manually in the Render dashboard only.
+services:
+  - type: web
+    name: astragrid-api
+    runtime: node
+    plan: free # Free plan — must stay "free"; verify in the dashboard before creating
+    autoDeploy: true
+    # Smallest install that can build the API: root tooling (typescript) + the
+    # api workspace only — skips web/simulator/CDK dependencies.
+    buildCommand: npm ci --include-workspace-root --workspace=@astragrid/api && npm run build --workspace=@astragrid/api
+    startCommand: node apps/api/dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: AWS_REGION
+        value: ap-south-2
+      - key: ASTRAGRID_TABLE_NAME
+        value: AstraGridStack-OperationalDataTableEE9C27F4-1R011LOOGTG4X
+      # Set after the Pages project exists (fail-closed: empty means browser CORS
+      # only allows localhost until you set it).
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Least-privilege DynamoDB access keys — created only after explicit
+      # approval (see docs/deployment-free.md §5). Entered in the Render
+      # dashboard; NEVER committed to git.
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false

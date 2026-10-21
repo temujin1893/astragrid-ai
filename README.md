@@ -95,6 +95,20 @@ To synthesize the CDK app locally (no deployment):
 npm run synth
 ```
 
+## Hosting ($0 free plan — prepared, not yet deployed)
+
+The active plan hosts the frontend on **Cloudflare Pages (free)** and the
+existing Express API on a **Render Free Web Service**, while the DynamoDB table,
+Streams, Detection Lambda, EventBridge bus, and CloudWatch logs in ap-south-2
+stay exactly as they are. Verified free-tier limits, the exact build/start
+commands, the least-privilege DynamoDB access design (keys live only in Render's
+dashboard, never in git), deployment steps, and the cost/security checklist are
+in `docs/deployment-free.md`. Deploy only after connecting GitHub and approving
+the one IAM identity step described there. The earlier AWS-native proposal
+(Amplify + HTTP API + Lambda) is on hold in `docs/deployment.md` and will not be
+deployed unless explicitly re-approved. Lambda Function URLs are unavailable in
+ap-south-2 (verified 2026-10-21).
+
 ## Layout
 
 ```text

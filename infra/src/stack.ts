@@ -3,6 +3,8 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
+import * as apigatewayv2 from "aws-cdk-lib/aws-apigatewayv2";
+import * as apigatewayv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
@@ -20,6 +22,19 @@ class AnomalyLogGroupTarget implements events.IRuleTarget {
 export class AstraGridStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+
+    // The deployed frontend origin drives the API's CORS allow-list. Pass it at
+    // synth/deploy time once the Amplify app exists:
+    //   npx cdk deploy -c amplifyOrigin=https://<app-id>.amplifyapp.com
+    // Fail closed: without the context the API only accepts browser calls from
+    // localhost, so a deploy that omits the flag cannot open CORS to everyone.
+    const requestedOrigin = String(this.node.tryGetContext("amplifyOrigin") ?? "").trim().replace(/\/$/, "");
+    const frontendOrigin = requestedOrigin === "" ? "http://localhost:5173" : requestedOrigin;
+    if (!/^https?:\/\/[^/\s]+$/.test(frontendOrigin)) {
+      throw new Error(
+        `amplifyOrigin must look like https://<app-id>.amplifyapp.com, received: ${frontendOrigin}`,
+      );
+    }
 
     // One table keeps operational entities together while PK/SK prefixes group
     // each entity and its related records into queryable item collections.
@@ -125,6 +140,104 @@ export class AstraGridStack extends Stack {
           Condition: { ArnEquals: { "aws:SourceArn": anomalyLogRule.ruleArn } },
         }],
       }),
+    });
+
+    // ---- Public API: the shared Express app adapted for Lambda ----
+    // The handler entry lives beside the Express app it wraps (apps/api), so the
+    // local server and the deployed function run the exact same routes, CORS
+    // policy, request validation, and error handling (see apps/api/src/app.ts).
+    const apiLogGroup = new logs.LogGroup(this, "ApiLambdaLogGroup", {
+      logGroupName: "/aws/lambda/AstraGridApiLambda",
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const apiRole = new iam.Role(this, "AstraGridApiLambdaRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    });
+    // Logs: only the API function's own log group, mirroring the detection role.
+    apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
+      resources: [`${apiLogGroup.logGroupArn}:*`],
+    }));
+    // Data: only the item actions the repository actually issues, scoped to the
+    // operational table and its indexes. No stream reads, no EventBridge, no
+    // Scan/DescribeTable, no permissions outside this table.
+    apiRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "dynamodb:Query",
+        "dynamodb:BatchGetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:TransactWriteItems",
+      ],
+      resources: [operationalTable.tableArn, `${operationalTable.tableArn}/index/*`],
+    }));
+
+    const apiLambda = new NodejsFunction(this, "AstraGridApiLambda", {
+      functionName: "AstraGridApiLambda",
+      entry: path.join(process.cwd(), "..", "apps", "api", "src", "lambda.ts"),
+      handler: "handler",
+      // nodejs20.x (the existing detection Lambda's runtime) stops accepting
+      // NEW functions on 2027-02-01, which would block future redeploys and
+      // rollbacks of this one; the existing function's runtime is left as-is.
+      // The bundle target stays node20 — its syntax runs unmodified on 24.
+      runtime: lambda.Runtime.NODEJS_24_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 512,
+      timeout: Duration.seconds(30),
+      role: apiRole,
+      logGroup: apiLogGroup,
+      // AWS_REGION is injected by the Lambda runtime (always this region);
+      // ASTRAGRID_TABLE_NAME comes from the existing table (never hard-coded).
+      environment: {
+        ASTRAGRID_TABLE_NAME: operationalTable.tableName,
+        ALLOWED_ORIGINS: frontendOrigin,
+      },
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: "node20",
+      },
+    });
+
+    // Public HTTPS endpoint: an API Gateway HTTP API in front of the same
+    // Lambda, with no auth stage/authorizer — any client that learns the URL can
+    // invoke it (see docs/deployment.md for the security trade-offs).
+    // Lambda Function URLs are unavailable in ap-south-2 (the regional endpoint
+    // rejects FunctionUrlConfig operations and CloudFormation has no
+    // AWS::Lambda::Url type there), so an HTTP API is the equivalent serverless
+    // endpoint that keeps everything in this region. HTTP APIs emit payload
+    // format 2.0, the event shape apps/api/src/lambda.ts is written for.
+    const httpApi = new apigatewayv2.HttpApi(this, "AstraGridHttpApi", {
+      apiName: "astragrid-api",
+      // CORS stays in the Express app (ALLOWED_ORIGINS) rather than the
+      // gateway: gateway CORS would add a second Access-Control-Allow-Origin
+      // header on responses and browsers reject duplicates. Preflight OPTIONS
+      // routes to the Lambda, where the cors middleware answers it.
+      defaultIntegration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "AstraGridApiIntegration",
+        apiLambda,
+      ),
+    });
+
+    // Throttle the unauthenticated endpoint: demo traffic is a few requests per
+    // second at most, so anything past these limits gets 429s instead of
+    // running up Lambda usage if the URL is probed.
+    const apiStage = httpApi.defaultStage?.node.defaultChild as apigatewayv2.CfnStage | undefined;
+    if (apiStage) {
+      apiStage.defaultRouteSettings = { throttlingBurstLimit: 50, throttlingRateLimit: 25 };
+    }
+
+    const apiBaseUrl = (httpApi.apiEndpoint ?? "").replace(/\/$/, "");
+
+    new CfnOutput(this, "AstraGridApiEndpoint", {
+      value: apiBaseUrl,
+      description: "Public HTTPS base URL of the AstraGrid Express API (API Gateway HTTP API)",
+    });
+    new CfnOutput(this, "AstraGridApiHealthEndpoint", {
+      value: `${apiBaseUrl}/api/health`,
+      description: "Public health endpoint of the AstraGrid Express API",
     });
 
     new CfnOutput(this, "OperationalTableName", {

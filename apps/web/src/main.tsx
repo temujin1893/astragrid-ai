@@ -2,7 +2,11 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const apiUrl = (import.meta.env.VITE_API_URL ?? "http://localhost:3001").replace(/\/$/, "");
+// In development, fall back to the local API. In production, require an explicit
+// VITE_API_URL so the deployed bundle never calls localhost.
+const configuredApiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+const apiUrl = configuredApiUrl ?? (import.meta.env.DEV ? "http://localhost:3001" : "");
+const isApiConfigured = apiUrl.length > 0;
 
 type RiskLevel = "NORMAL" | "ELEVATED" | "HIGH";
 
@@ -114,8 +118,26 @@ function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(
+    () => typeof navigator !== "undefined" && !navigator.onLine,
+  );
 
   useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isApiConfigured) {
+      setError("VITE_API_URL is not set for this environment.");
+      return;
+    }
     let isMounted = true;
     let timer: ReturnType<typeof setTimeout>;
     const controller = new AbortController();
@@ -191,7 +213,13 @@ function App() {
         </header>
 
         <div className="page-content">
-          {error && (
+          {isOffline && isApiConfigured && (
+            <div className="error-banner error-banner-offline" role="alert">
+              <span><strong>You are offline.</strong> The dashboard will resume as soon as the connection returns.</span>
+              <span className="retry-state">Waiting for network</span>
+            </div>
+          )}
+          {error && !isOffline && (
             <div className="error-banner" role="alert">
               <span><strong>Unable to refresh live data.</strong> {error} Check that the API and simulator are running.</span>
               <span className="retry-state">Retrying automatically</span>
@@ -213,9 +241,9 @@ function App() {
           {!dashboard ? (
             <section className="empty-state" aria-live="polite">
               <span className="empty-state-icon">⌁</span>
-              <h2>{error ? "Waiting for the monitoring API" : "Connecting to city operations"}</h2>
-              <p>Start the API and sensor simulator to see live infrastructure readings.</p>
-              <code>npm run dev:api <span>·</span> npm run dev:simulator</code>
+              <h2>{!isApiConfigured ? "API URL not configured" : isOffline ? "Waiting for network" : error ? "Waiting for the monitoring API" : "Connecting to city operations"}</h2>
+              <p>{!isApiConfigured ? "This environment is missing its VITE_API_URL value." : isOffline ? "Reconnect to resume the live city feed." : "Start the API and sensor simulator to see live infrastructure readings."}</p>
+              {!isApiConfigured ? <code>VITE_API_URL=<span>·</span> set in hosting environment</code> : <code>npm run dev:api <span>·</span> npm run dev:simulator</code>}
             </section>
           ) : (
             <>
@@ -346,7 +374,7 @@ function App() {
                   ))}
                 </div>
               </section>
-              <footer className="page-footer"><span>ASTRAGRID AI <span>·</span> LOCAL MONITORING PIPELINE</span><span>Data updated at {updatedAt} <span className="footer-dot">●</span></span></footer>
+              <footer className="page-footer"><span>ASTRAGRID AI <span>·</span> SIMULATED DATA · DEMO ENVIRONMENT</span><span>Data updated at {updatedAt} <span className="footer-dot">●</span></span></footer>
             </>
           )}
         </div>

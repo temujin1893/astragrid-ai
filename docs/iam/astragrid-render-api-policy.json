@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OperationalTableItemAccessOnly",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Query",
+        "dynamodb:BatchGetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:TransactWriteItems"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-south-2:682047236179:table/AstraGridStack-OperationalDataTableEE9C27F4-1R011LOOGTG4X",
+        "arn:aws:dynamodb:ap-south-2:682047236179:table/AstraGridStack-OperationalDataTableEE9C27F4-1R011LOOGTG4X/index/*"
+      ]
+    }
+  ]
+}
