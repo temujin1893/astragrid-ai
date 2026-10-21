@@ -89,7 +89,7 @@ volumes. See `docs/deployment.md` §7 for the verified ap-south-2 unit prices.
 
 ---
 
-## 3. Repo changes (minimal set — all local, committed by you)
+## 3. Repo changes (minimal set — committed as `ffe6c4f`, not pushed)
 
 | File | Purpose |
 | --- | --- |
